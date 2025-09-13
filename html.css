@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Code Learning Assistant — Demo</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#7c3aed;--muted:#94a3b8;--glass: rgba(255,255,255,0.04)}
+    *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071126 0%, #071a2a 100%);color:#e6eef8}
+    .app{max-width:1100px;margin:28px auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px}
+    .logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#06b6d4);display:flex;align-items:center;justify-content:center;font-weight:700;color:#041022}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:6px 0 18px;color:var(--muted)}
+
+    .grid{display:grid;grid-template-columns:1fr 420px;gap:18px}
+    .card{background:var(--card);padding:14px;border-radius:12px;box-shadow:0 6px 20px rgba(2,6,23,0.6);}
+
+    /* Editor */
+    .editor{height:420px;display:flex;flex-direction:column}
+    textarea.code{flex:1;width:100%;resize:vertical;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:linear-gradient(180deg,#051025,#07112a);color:#dbeefe;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace;font-size:13px}
+    .controls{display:flex;gap:8px;margin-top:10px}
+    button{background:var(--accent);border:none;color:white;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+
+    /* Right column panels */
+    .panel{margin-bottom:12px}
+    .panel h3{margin:0 0 8px;font-size:14px}
+    .output{height:150px;overflow:auto;background:linear-gradient(180deg,#061026,#08142a);padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);font-family:ui-monospace,monospace;font-size:13px}
+    .suggestion{background:var(--glass);padding:8px;border-radius:8px;margin-bottom:8px;color:var(--muted)}
+
+    .exercises{display:flex;flex-direction:column;gap:8px}
+    .exercise{padding:10px;border-radius:8px;background:linear-gradient(180deg,#071326,#07192a);border:1px solid rgba(255,255,255,0.02)}
+    .small{font-size:13px;color:var(--muted)}
+    footer{margin-top:18px;color:var(--muted);font-size:13px}
+
+    @media (max-width:980px){.grid{grid-template-columns:1fr;}.editor{height:320px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="logo">CLA</div>
+      <div>
+        <h1>Code Learning Assistant — Demo</h1>
+        <p class="lead">A single-file prototype with code analysis, error detection, debugging suggestions, exercise generation and interactive tutorials (HTML/CSS/JS).</p>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="card">
+        <h3>Code Editor</h3>
+        <div class="editor">
+          <select id="language" title="language">
+            <option value="javascript">JavaScript (live run & analysis)</option>
+            <option value="python">Python (static checks only — demo)</option>
+            <option value="c">C (static checks only — demo)</option>
+          </select>
+          <textarea id="code" class="code" spellcheck="false">// Try this sample (JS):
+function greet(name) {
+  console.log('Hello, ' + name.toUpperCase());
+}
+
+greet('student');
+</textarea>
+
+          <div class="controls">
+            <button id="run">Run / Analyze</button>
+            <button id="format" class="secondary">Format (basic)</button>
+            <button id="exercise" class="secondary">Generate Exercise</button>
+            <button id="tutorial" class="secondary">Start Tutorial</button>
+            <div style="flex:1"></div>
+            <button id="save" class="secondary">Save</button>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:10px">
+          <div style="flex:1"><small class="small">Tips: write JavaScript to get live runtime results. For other languages the assistant will run static pattern checks and give hints.</small></div>
+        </div>
+      </section>
+
+      <aside>
+        <div class="panel card">
+          <h3>Output & Runtime Errors</h3>
+          <pre id="output" class="output">(Run code to see console output, errors, and suggestions.)</pre>
+          <div id="suggestions"></div>
+        </div>
+
+        <div class="panel card">
+          <h3>Exercise Generator</h3>
+          <div class="exercises" id="exerciseList">
+            <div class="exercise"><strong>Example:</strong> Implement a function `sumArray(arr)` that returns the sum of numbers in an array.</div>
+          </div>
+        </div>
+
+        <div class="panel card">
+          <h3>Interactive Steps</h3>
+          <div id="steps" class="suggestion">No tutorial running. Click "Start Tutorial" for a guided walk-through.</div>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      Prototype — Save this file as <code>code-learning-assistant.html</code> and open in a modern browser. This is a front-end demo; for production integrate language servers and secure sandboxes.
+    </footer>
+  </div>
+
+  <script>
+    // Small helper utilities and demo analyzers.
+    const codeEl = document.getElementById('code');
+    const outputEl = document.getElementById('output');
+    const suggestionsEl = document.getElementById('suggestions');
+    const langEl = document.getElementById('language');
+
+    function appendOutput(text){
+      outputEl.textContent += '\n' + text;
+      outputEl.scrollTop = outputEl.scrollHeight;
+    }
+
+    function clearOutput(){ outputEl.textContent = ''; suggestionsEl.innerHTML = ''; }
+
+    function basicStaticChecks(source, lang){
+      const hints = [];
+      // simple heuristics
+      if(lang === 'javascript'){
+        if(/==[^=]/.test(source)) hints.push('Use === instead of == for strict equality.');
+        if(/console\.log\(/.test(source) && /debugger/.test(source)) hints.push('Remove leftover debugger statements before finalizing.');
+        if(/function\s+\w+\(/.test(source) && !/return\s+/.test(source)) hints.push('Some functions do not return a value — check if a return is expected.');
+      }
+      if(lang === 'python'){
+        if(/print\(/.test(source) && /\t/.test(source)) hints.push('Avoid mixing tabs and spaces; use 4-space indentation.');
+        if(/==/.test(source)) hints.push('Confirm comparisons — consider using `is` for None checks where appropriate.');
+      }
+      if(lang === 'c'){
+        if(/malloc\(|free\(/.test(source)) hints.push('Be careful with malloc/free — ensure allocations are checked and freed appropriately.');
+      }
+      return hints;
+    }
+
+    // Very naive formatter (keeps simple indentation for JS)
+    function simpleFormat(src){
+      return src.split('\n').map(line=>line.replace(/\t/g,'  ').replace(/\s+$/,'')).join('\n');
+    }
+
+    // Run JS in a safe-ish sandbox using Function and capturing console
+    function runJavaScript(source){
+      clearOutput();
+      const logs = [];
+      const fakeConsole = {
+        log: (...args)=>logs.push({type:'log', text: args.map(a=>String(a)).join(' ')}),
+        error: (...args)=>logs.push({type:'error', text: args.map(a=>String(a)).join(' ')}),
+        warn: (...args)=>logs.push({type:'warn', text: args.map(a=>String(a)).join(' ')})
+      };
+      try{
+        const wrapped = `(function(console){\n${source}\n})(fakeConsole);`;
+        // create a Function that exposes fakeConsole as fakeConsole
+        const fn = new Function('fakeConsole', wrapped);
+        fn(fakeConsole);
+      }catch(e){
+        logs.push({type:'exception', text: e.toString()});
+      }
+      // display logs
+      logs.forEach(l => appendOutput('['+l.type+'] ' + l.text));
+
+      // If there was an exception, generate debugging suggestions
+      const exceptions = logs.filter(x=>x.type==='exception');
+      if(exceptions.length){
+        generateDebugSuggestions(exceptions[0].text, source, 'javascript');
+      } else {
+        const hints = basicStaticChecks(source, 'javascript');
+        showSuggestions(hints);
+      }
+    }
+
+    // For non-JS languages: run static checks and provide hints (demo)
+    function analyzeOther(source, lang){
+      clearOutput();
+      appendOutput('(Static analysis demo — not executing ' + lang + ')');
+      const hints = basicStaticChecks(source, lang);
+      appendOutput('Found ' + hints.length + ' hint(s).');
+      showSuggestions(hints);
+    }
+
+    function showSuggestions(hints){
+      suggestionsEl.innerHTML = '';
+      if(hints.length === 0){ suggestionsEl.innerHTML = '<div class="suggestion">No obvious issues found by heuristics. Try running tests or linting with a proper toolchain.</div>' }
+      hints.forEach(h=>{
+        const d = document.createElement('div'); d.className = 'suggestion'; d.textContent = '• ' + h; suggestionsEl.appendChild(d);
+      })
+    }
+
+    // Very naive error->suggestion mapping
+    function generateDebugSuggestions(errText, source, lang){
+      const sug = [];
+      appendOutput('\n--- Debugging suggestions ---');
+      if(/ReferenceError: (\w+)/.test(errText)){
+        const m = errText.match(/ReferenceError: (\w+)/);
+        sug.push('ReferenceError: ' + m[1] + ' — check variable spelling and scope (e.g., missing `let/const/var`).');
+      }
+      if(/TypeError: (\w+)/.test(errText)){
+        sug.push('TypeError detected — inspect the value that you are calling or indexing; add console.log of intermediate values.');
+      }
+      if(/Unexpected token/.test(errText) || /SyntaxError/.test(errText)){
+        sug.push('Syntax error — check missing brackets, commas or stray characters.');
+      }
+      if(sug.length===0) sug.push('General error: ' + errText + '. Try adding console.log before the failing line to inspect values.');
+      showSuggestions(sug);
+    }
+
+    // Exercise generator (simple templates)
+    function generateExercise(){
+      const pool = [
+        {title:'Sum of array', desc:'Write a function sumArray(arr) that returns the sum of numbers.'},
+        {title:'Reverse string', desc:'Implement reverseString(s) that returns the reversed string.'},
+        {title:'FizzBuzz', desc:'Print numbers 1..n with Fizz/Buzz rules; return an array of outputs.'},
+        {title:'Is Prime', desc:'Implement isPrime(n) that returns true for prime numbers (n>1).'},
+        {title:'Count vowels', desc:'Return number of vowels in a given string.'}
+      ];
+      const pick = pool[Math.floor(Math.random()*pool.length)];
+      const node = document.createElement('div'); node.className='exercise'; node.innerHTML = `<strong>${pick.title}</strong><div class="small">${pick.desc}</div>`;
+      const list = document.getElementById('exerciseList'); list.prepend(node);
+    }
+
+    // Basic tutorial steps (demo)
+    const tutorial = {
+      step:0,
+      steps:[
+        'Welcome — this tutorial will help you run and debug small JavaScript snippets.',
+        'Step: Inspect the sample code above. Add a console.log(...) inside a function to print intermediate values.',
+        'Step: Intentionally cause a small error (e.g. call undefinedFunction()) and click Run to see how the assistant shows suggestions.',
+        'Step: Fix the error using the suggestions and re-run until it works. Use the exercise generator for practice.'
+      ],
+      start(){ this.step=0; showStep(); }
+    };
+    function showStep(){
+      const el = document.getElementById('steps');
+      el.textContent = tutorial.steps[tutorial.step] || 'Tutorial finished.';
+      tutorial.step = Math.min(tutorial.step+1, tutorial.steps.length);
+    }
+
+    // Event listeners
+    document.getElementById('run').addEventListener('click', ()=>{
+      const src = codeEl.value;
+      const lang = langEl.value;
+      clearOutput();
+      if(!src.trim()){ appendOutput('No code to run.'); return; }
+      appendOutput('--- Running analysis ('+lang+') ---');
+      if(lang === 'javascript'){
+        try{ runJavaScript(src); }catch(e){ appendOutput('Execution prevented: ' + e.toString()); }
+      } else {
+        analyzeOther(src, lang);
+      }
+    });
+
+    document.getElementById('format').addEventListener('click', ()=>{
+      codeEl.value = simpleFormat(codeEl.value);
+    });
+
+    document.getElementById('exercise').addEventListener('click', ()=>{ generateExercise(); });
+
+    document.getElementById('tutorial').addEventListener('click', ()=>{ tutorial.start(); showStep(); });
+
+    document.getElementById('save').addEventListener('click', ()=>{
+      localStorage.setItem('cla_code', codeEl.value);
+      alert('Saved to local storage');
+    });
+
+    // load saved
+    if(localStorage.getItem('cla_code')){ codeEl.value = localStorage.getItem('cla_code'); }
+
+    // small safety notes: we intentionally avoid network and full sandboxing — production requires a secure server-side runner or sandboxed worker to execute arbitrary student code safely.
+  </script>
+</body>
+</html>
